@@ -1,59 +1,72 @@
-# 1_smoke_test — Soccer EKG Pipeline Smoke Test
+# Soccer EKG — Smoke Test Edition
 
-Quick test to confirm the pipeline runs end-to-end on ONE match.
-~30-45 minutes on H100 80GB. Output: AI commentary + metrics.
+This repo contains the full soccer commentary pipeline + a smoke test to verify 
+it runs end-to-end on ONE match (Burnley). ~30-45 minutes on H100 or A100 80GB GPU.
+
+## Repository structure
+This repo includes the COMPLETE pipeline code:
+- `src/` — pipeline modules (video processor, KG builder, commentator, etc.)
+- `experiments/` — experiment scaffold (level1_baseline.py, level2, level3)
+- `main.py` — pipeline orchestrator
+- `ekg_tbox.ttl` — RDF/OWL ontology
+- `run_smoke.sh` — smoke test runner
+
+You ONLY need to fetch:
+- `data/` — match videos + ground truth (from DGX, ~2.5 GB)
+- `models/` — Qwen3-VL-30B + Qwen2.5-7B-AWQ (from DGX, ~65 GB)
 
 ## Prerequisites
-- Linux server with SLURM
-- 1× GPU with ≥40 GB memory (H100, A100 80GB)
-- conda installed
-- ~80 GB free disk (models + 1 match)
+- Linux server with conda installed
+- 1× GPU with ≥40 GB memory (H100/A100 80GB recommended)
+- ~80 GB free disk space
+- SSH access to admin@spark-296d (DGX)
 
-## Steps
+## Setup (one-time, ~30 min)
 
-### 1. Clone main project + this smoke repo
+### 1. Clone this repo
 ```bash
 cd ~
-git clone https://github.com/wer11002/real-time_KG-with-vlm
-git clone https://github.com/<user>/1_smoke_test
-2. Get data + models from DGX
-Run on DGX:
+git clone https://github.com/game347/1_smoke_test
+cd 1_smoke_test
+```
 
+### 2. Get data from DGX (~2.5 GB)
+```bash
+mkdir -p data/sn_long
+rsync -avhP \
+    "admin@spark-296d:~/work/s2616011/real-time_KG-with-vlm/data/sn_long/2015-04-11 - Burnley - Arsenal/" \
+    "data/sn_long/2015-04-11 - Burnley - Arsenal/"
+```
 
-cd ~/work/s2616011
+### 3. Get models from DGX (~65 GB)
+```bash
+mkdir -p ~/models
+rsync -avhP admin@spark-296d:~/work/s2616011/models/Qwen2.5-7B-Instruct-AWQ/ ~/models/Qwen2.5-7B-Instruct-AWQ/
+rsync -avhP admin@spark-296d:~/work/s2616011/models/Qwen3-VL-30B-A3B-Instruct/ ~/models/Qwen3-VL-30B-A3B-Instruct/
+```
 
-# Code already in main repo — only need data + models
-rsync -avhP --stats \
-  --include='/sn_long/' \
-  --include='/sn_long/2015-04-11 - Burnley - Arsenal/***' \
-  --exclude='/sn_long/*' \
-  --exclude='*' \
-  real-time_KG-with-vlm/data/ \
-  USER@FRIEND_SERVER:~/real-time_KG-with-vlm/data/
-
-rsync -avhP --stats \
-  models/Qwen2.5-7B-Instruct-AWQ/ \
-  USER@FRIEND_SERVER:~/models/Qwen2.5-7B-Instruct-AWQ/
-3. Set up conda env (one time)
-
-cd ~/real-time_KG-with-vlm
-conda env create -f environment.yml -n rag
+### 4. Set up conda env
+```bash
+conda create -n rag python=3.11 -y
 conda activate rag
-4. Copy the smoke test script and submit
+pip install vllm transformers torch rdflib requests opencv-python nltk rouge-score pycocoevalcap bert-score thefuzz Pillow
+```
 
-cp ~/1_smoke_test/smoke_test.sh ~/real-time_KG-with-vlm/
-cd ~/real-time_KG-with-vlm
-sbatch smoke_test.sh
-squeue -u $USER
-5. Watch (optional)
+## Run the smoke test
+```bash
+bash run_smoke.sh
+```
 
-tail -f logs/smoke-*.log
-6. When done — send these back
+Takes ~45 min. Watch progress:
 
-# After job finishes:
-cat experiments/results.json
-cat logs/smoke-*.log | tail -100
-Send me:
+```bash
+tail -f smoke_test.log
+```
 
-experiments/results.json
-logs/smoke-<JOB_ID>.log
+## When done — send back
+- `experiments/results.json` (the metrics)
+- `smoke_test.log` (full output)
+- `vllm.log` (vLLM startup log)
+
+## If something breaks
+Send me the log files. Don't try to fix.
