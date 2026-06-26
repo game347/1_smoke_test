@@ -9,7 +9,7 @@ This repo includes the COMPLETE pipeline code:
 - `experiments/` — experiment scaffold (level1_baseline.py, level2, level3)
 - `main.py` — pipeline orchestrator
 - `ekg_tbox.ttl` — RDF/OWL ontology
-- `run_smoke.sh` — smoke test runner
+- `run_smoke.py` — smoke test runner (Python)
 
 You ONLY need to fetch:
 - `data/` — match videos + ground truth (from DGX, ~2.5 GB)
@@ -17,9 +17,11 @@ You ONLY need to fetch:
 
 ## Prerequisites
 - Linux server with conda installed
-- 1× GPU with ≥40 GB memory (H100/A100 80GB recommended)
+- 1x GPU with **>=80 GB memory** (H100 80GB or A100 80GB required)
+  - Qwen3-VL-30B is ~60 GB in bf16, needs 80 GB to fit alongside vLLM
 - ~80 GB free disk space
-- SSH access to admin@spark-296d (DGX)
+- SSH access to `admin@spark-296d` (DGX)
+- ffmpeg installed (apt or conda)
 
 ## Setup (one-time, ~30 min)
 
@@ -45,19 +47,28 @@ rsync -avhP admin@spark-296d:~/work/s2616011/models/Qwen2.5-7B-Instruct-AWQ/ ~/m
 rsync -avhP admin@spark-296d:~/work/s2616011/models/Qwen3-VL-30B-A3B-Instruct/ ~/models/Qwen3-VL-30B-A3B-Instruct/
 ```
 
-### 4. Set up conda env
+### 4. System dependencies (if ffmpeg not already installed)
+```bash
+sudo apt update && sudo apt install -y ffmpeg
+# OR without sudo, via conda (after step 5):
+# conda install -c conda-forge ffmpeg
+```
+
+### 5. Set up conda env
 ```bash
 conda create -n rag python=3.11 -y
 conda activate rag
-pip install vllm transformers torch rdflib requests opencv-python nltk rouge-score pycocoevalcap bert-score thefuzz Pillow
+pip install vllm transformers torch rdflib requests opencv-python-headless \
+    nltk rouge-score pycocoevalcap bert-score thefuzz Pillow \
+    numpy pandas beautifulsoup4 lxml accelerate
 ```
 
 ## Run the smoke test
 ```bash
-bash run_smoke.sh
+python run_smoke.py
 ```
 
-Takes ~45 min. Watch progress:
+Takes ~45 min. Watch progress in another terminal:
 
 ```bash
 tail -f smoke_test.log
@@ -65,8 +76,23 @@ tail -f smoke_test.log
 
 ## When done — send back
 - `experiments/results.json` (the metrics)
-- `smoke_test.log` (full output)
+- `smoke_test.log` (full pipeline output)
 - `vllm.log` (vLLM startup log)
 
 ## If something breaks
 Send me the log files. Don't try to fix.
+
+## What this test does
+1. Starts vLLM serving Qwen2.5-7B-AWQ on port 8001 (background subprocess)
+2. Runs main.py on the Burnley match — VLM detects events from frames, builds RDF/OWL KG, commentator generates commentary
+3. Extracts AI commentary into JSON
+4. Evaluates against SN-Short ground truth (BLEU, METEOR, ROUGE, CIDEr, BERTScore, CRR)
+5. Saves results to `experiments/results.json`
+
+## Expected runtime
+| Stage | Time |
+|-------|------|
+| vLLM startup | ~2 min |
+| Pipeline on Burnley | ~30-40 min |
+| Evaluation | ~1 min |
+| **Total** | **~35-45 min** |
